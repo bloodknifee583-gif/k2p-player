@@ -13,6 +13,8 @@ import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.LinearGradient
+import android.graphics.RectF
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Path
@@ -101,15 +103,36 @@ class Ic(ctx: Context, d: String, private var color: Int, private val k: Float =
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     fun setIcon(d: String) { path = parse(d); invalidate() }
     fun tint(c: Int) { color = c; invalidate() }
+    private var ringT = 0f
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (isClickable) when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> animate().scaleX(0.86f).scaleY(0.86f).setDuration(90).start()
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+            MotionEvent.ACTION_DOWN -> Fx.down(this)
+            MotionEvent.ACTION_UP -> { Fx.up(this); burst() }
+            MotionEvent.ACTION_CANCEL -> Fx.up(this)
         }
         return super.onTouchEvent(e)
     }
 
+    private fun burst() {
+        if (Fx.style == 6) return
+        val a = android.animation.ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 420
+        a.addUpdateListener { ringT = it.animatedValue as Float; invalidate() }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(an: android.animation.Animator) { ringT = 0f; invalidate() }
+        })
+        a.start()
+    }
+
     override fun onDraw(c: Canvas) {
+        if (ringT > 0f) {
+            ringPaint.color = color
+            ringPaint.alpha = ((1f - ringT) * 170).toInt()
+            ringPaint.strokeWidth = width * 0.05f
+            c.drawCircle(width / 2f, height / 2f, width * (0.22f + 0.26f * ringT), ringPaint)
+        }
         paint.color = color
         val s = minOf(width, height) * k / 24f
         c.save()
@@ -117,6 +140,357 @@ class Ic(ctx: Context, d: String, private var color: Int, private val k: Float =
         c.scale(s, s)
         c.drawPath(path, paint)
         c.restore()
+    }
+}
+
+object Fx {
+    @JvmField var style = 0
+    fun down(v: View, k: Float = 0.84f) { v.animate().cancel(); v.animate().scaleX(k).scaleY(k).setDuration(80).start() }
+    fun up(v: View) {
+        v.animate().cancel()
+        val dn = v.resources.displayMetrics.density
+        when (style) {
+            0 -> v.animate().scaleX(1f).scaleY(1f).setDuration(420).setInterpolator(android.view.animation.OvershootInterpolator(3.5f)).start()
+            1 -> v.animate().scaleX(1f).scaleY(1f).setDuration(100).withEndAction {
+                v.animate().rotation(14f).setDuration(70).withEndAction {
+                    v.animate().rotation(-10f).setDuration(80).withEndAction { v.animate().rotation(0f).setDuration(100).start() }.start()
+                }.start()
+            }.start()
+            2 -> v.animate().scaleX(1.2f).scaleY(1.2f).setDuration(110).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(android.view.animation.OvershootInterpolator(2f)).start()
+            }.start()
+            3 -> v.animate().scaleX(1f).scaleY(1f).translationY(-8 * dn).setDuration(110).withEndAction {
+                v.animate().translationY(0f).setDuration(380).setInterpolator(android.view.animation.BounceInterpolator()).start()
+            }.start()
+            4 -> { v.alpha = 0.35f; v.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(360).setInterpolator(android.view.animation.OvershootInterpolator(2.5f)).start() }
+            5 -> v.animate().scaleX(1f).scaleY(1f).rotationBy(360f).setDuration(420).setInterpolator(android.view.animation.DecelerateInterpolator()).withEndAction { v.rotation = 0f }.start()
+            else -> v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+        }
+    }
+}
+
+class Gi(ctx: Context, var idx: Int, private val ring: Int = 0) : View(ctx) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rc = RectF()
+
+    companion object {
+        val PAL = arrayOf(
+            intArrayOf(0xFF1DB954.toInt(), 0xFF0B5D2A.toInt(), Color.WHITE),
+            intArrayOf(0xFFFF2E93.toInt(), 0xFF6A1B9A.toInt(), Color.WHITE),
+            intArrayOf(0xFFFF9A3C.toInt(), 0xFFE5173F.toInt(), Color.WHITE),
+            intArrayOf(0xFF00E5FF.toInt(), 0xFF1E4FD8.toInt(), Color.WHITE),
+            intArrayOf(0xFFFFE259.toInt(), 0xFFFFA751.toInt(), 0xFF3B2A00.toInt())
+        )
+        const val GLYPHS = 25
+        const val COUNT = 125
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val pal = PAL[(idx / GLYPHS) % PAL.size]
+        val rad = w * 0.26f
+        rc.set(0f, 0f, w, h)
+        p.style = Paint.Style.FILL
+        p.shader = LinearGradient(0f, 0f, w, h, pal[0], pal[1], Shader.TileMode.CLAMP)
+        c.drawRoundRect(rc, rad, rad, p)
+        p.shader = null
+        c.save()
+        path.reset(); path.addRoundRect(rc, rad, rad, Path.Direction.CW); c.clipPath(path)
+        p.color = Color.argb(46, 255, 255, 255)
+        c.drawCircle(w * 0.85f, h * 0.1f, w * 0.55f, p)
+        c.restore()
+        p.color = pal[2]
+        glyph(c, idx % GLYPHS, w / 2f, h / 2f, w * 0.27f)
+        if (ring != 0) {
+            p.style = Paint.Style.STROKE; p.strokeWidth = w * 0.07f; p.color = ring
+            rc.set(0f, 0f, w, h); rc.inset(w * 0.035f, w * 0.035f)
+            c.drawRoundRect(rc, rad, rad, p)
+        }
+    }
+
+    private fun poly(c: Canvas, cx: Float, cy: Float, r: Float, n: Int, rot: Double) {
+        path.reset()
+        for (i in 0 until n) {
+            val a = Math.toRadians(rot) + i * 2 * Math.PI / n
+            val x = cx + (r * Math.cos(a)).toFloat()
+            val y = cy + (r * Math.sin(a)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close(); c.drawPath(path, p)
+    }
+
+    private fun star(c: Canvas, cx: Float, cy: Float, r: Float, n: Int, inner: Float) {
+        path.reset()
+        for (i in 0 until n * 2) {
+            val rr = if (i % 2 == 0) r else r * inner
+            val a = -Math.PI / 2 + i * Math.PI / n
+            val x = cx + (rr * Math.cos(a)).toFloat()
+            val y = cy + (rr * Math.sin(a)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close(); c.drawPath(path, p)
+    }
+
+    private fun flower(c: Canvas, cx: Float, cy: Float, r: Float, n: Int) {
+        for (i in 0 until n) {
+            val a = i * 2 * Math.PI / n
+            c.drawCircle(cx + (r * 0.58 * Math.cos(a)).toFloat(), cy + (r * 0.58 * Math.sin(a)).toFloat(), r * 0.4f, p)
+        }
+        c.drawCircle(cx, cy, r * 0.34f, p)
+    }
+
+    private fun plus(c: Canvas, cx: Float, cy: Float, r: Float) {
+        rc.set(cx - r * 0.26f, cy - r, cx + r * 0.26f, cy + r); c.drawRoundRect(rc, r * 0.12f, r * 0.12f, p)
+        rc.set(cx - r, cy - r * 0.26f, cx + r, cy + r * 0.26f); c.drawRoundRect(rc, r * 0.12f, r * 0.12f, p)
+    }
+
+    private fun glyph(c: Canvas, g: Int, cx: Float, cy: Float, r: Float) {
+        p.style = Paint.Style.FILL
+        p.strokeCap = Paint.Cap.ROUND
+        p.strokeJoin = Paint.Join.ROUND
+        when (g) {
+            0 -> poly(c, cx, cy, r * 1.25f, 3, -90.0)
+            1 -> poly(c, cx, cy, r * 1.3f, 4, 0.0)
+            2 -> poly(c, cx, cy, r * 1.2f, 5, -90.0)
+            3 -> poly(c, cx, cy, r * 1.2f, 6, 0.0)
+            4 -> poly(c, cx, cy, r * 1.2f, 8, 22.5)
+            5 -> star(c, cx, cy, r * 1.4f, 4, 0.38f)
+            6 -> star(c, cx, cy, r * 1.4f, 5, 0.45f)
+            7 -> star(c, cx, cy, r * 1.4f, 6, 0.55f)
+            8 -> star(c, cx, cy, r * 1.4f, 8, 0.62f)
+            9 -> flower(c, cx, cy, r * 1.2f, 5)
+            10 -> flower(c, cx, cy, r * 1.2f, 6)
+            11 -> flower(c, cx, cy, r * 1.2f, 8)
+            12 -> { p.style = Paint.Style.STROKE; p.strokeWidth = r * 0.36f; c.drawCircle(cx, cy, r * 0.95f, p) }
+            13 -> { p.style = Paint.Style.STROKE; p.strokeWidth = r * 0.26f; c.drawCircle(cx, cy, r, p); p.style = Paint.Style.FILL; c.drawCircle(cx, cy, r * 0.42f, p) }
+            14 -> c.drawCircle(cx, cy, r, p)
+            15 -> {
+                path.reset()
+                path.moveTo(cx, cy + r * 0.95f)
+                path.cubicTo(cx - r * 1.5f, cy - r * 0.1f, cx - r * 0.9f, cy - r * 1.1f, cx, cy - r * 0.35f)
+                path.cubicTo(cx + r * 0.9f, cy - r * 1.1f, cx + r * 1.5f, cy - r * 0.1f, cx, cy + r * 0.95f)
+                path.close(); c.drawPath(path, p)
+            }
+            16 -> {
+                val a = Path(); a.addCircle(cx, cy, r, Path.Direction.CW)
+                val b = Path(); b.addCircle(cx + r * 0.45f, cy - r * 0.2f, r * 0.85f, Path.Direction.CW)
+                a.op(b, Path.Op.DIFFERENCE); c.drawPath(a, p)
+            }
+            17 -> {
+                path.reset()
+                path.moveTo(cx, cy - r)
+                path.cubicTo(cx + r, cy, cx + r * 0.8f, cy + r, cx, cy + r)
+                path.cubicTo(cx - r * 0.8f, cy + r, cx - r, cy, cx, cy - r)
+                path.close(); c.drawPath(path, p)
+            }
+            18 -> {
+                val pts = floatArrayOf(0.2f, -1f, -0.6f, 0.1f, -0.1f, 0.1f, -0.25f, 1f, 0.65f, -0.25f, 0.1f, -0.25f)
+                path.reset()
+                for (i in 0 until 6) { val x = cx + pts[i * 2] * r * 1.1f; val y = cy + pts[i * 2 + 1] * r * 1.1f; if (i == 0) path.moveTo(x, y) else path.lineTo(x, y) }
+                path.close(); c.drawPath(path, p)
+            }
+            19 -> plus(c, cx, cy, r)
+            20 -> { c.save(); c.rotate(45f, cx, cy); plus(c, cx, cy, r * 1.1f); c.restore() }
+            21 -> {
+                p.style = Paint.Style.STROKE; p.strokeWidth = r * 0.28f
+                path.reset()
+                for (i in 0..24) {
+                    val x = cx - r * 1.1f + r * 2.2f * i / 24f
+                    val y = cy + (Math.sin(i / 24.0 * 3 * Math.PI) * r * 0.5).toFloat()
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                c.drawPath(path, p)
+            }
+            22 -> {
+                val bw = r * 0.5f
+                val hs = floatArrayOf(0.6f, 1f, 0.42f)
+                for (i in 0 until 3) {
+                    val x = cx + (i - 1) * bw * 1.45f
+                    rc.set(x - bw / 2, cy + r - 2 * r * hs[i], x + bw / 2, cy + r)
+                    c.drawRoundRect(rc, bw * 0.3f, bw * 0.3f, p)
+                }
+            }
+            23 -> {
+                path.reset()
+                path.moveTo(cx, cy - r * 1.3f); path.quadTo(cx, cy, cx + r * 1.3f, cy)
+                path.quadTo(cx, cy, cx, cy + r * 1.3f); path.quadTo(cx, cy, cx - r * 1.3f, cy)
+                path.quadTo(cx, cy, cx, cy - r * 1.3f); path.close(); c.drawPath(path, p)
+            }
+            else -> {
+                val np = PathParser.createPathFromPathData(P.NOTE) ?: Path()
+                val m = android.graphics.Matrix()
+                m.setScale(r * 2.1f / 24f, r * 2.1f / 24f)
+                m.postTranslate(cx - r * 1.05f, cy - r * 1.05f)
+                np.transform(m); c.drawPath(np, p)
+            }
+        }
+    }
+}
+
+class Bars(ctx: Context) : View(ctx) {
+    var style = 0
+    var active = false
+    var c1 = Color.GREEN
+    var c2 = Color.CYAN
+    var real: FloatArray? = null
+    var useReal = false
+    private val pt = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val rc = RectF()
+    private var t = 0f
+    private val lv = FloatArray(48)
+    private val pk = FloatArray(48)
+
+    companion object {
+        val BASE = listOf("Полоски", "Линии", "Точки", "Блоки", "Зеркало", "Волна", "Заливка", "Круг", "Пики", "Ромбы")
+        val VAR = listOf("мягкие", "плотные", "радуга", "переход", "крупные")
+        val COUNTS = intArrayOf(24, 40, 16, 32, 12)
+        const val COUNT = 50
+        fun name(i: Int): String = BASE[i % 10] + " · " + VAR[(i / 10) % 5]
+    }
+
+    private fun mixc(a: Int, b: Int, f: Float): Int {
+        val k = f.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(a) + (Color.red(b) - Color.red(a)) * k).toInt(),
+            (Color.green(a) + (Color.green(b) - Color.green(a)) * k).toInt(),
+            (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * k).toInt())
+    }
+
+    private fun colAt(i: Int, n: Int, h: Float): Int = when ((style / 10) % 5) {
+        0 -> c1
+        1 -> mixc(c1, c2, i / (n - 1f))
+        2 -> Color.HSVToColor(floatArrayOf(i * 360f / n, 0.7f, 1f))
+        3 -> mixc(c1, c2, h * 1.2f)
+        else -> c2
+    }
+
+    private fun sim(i: Int, n: Int): Float {
+        val beat = 0.55f + 0.45f * Math.abs(Math.sin(t * 2.1)).toFloat()
+        val a = (Math.sin(t * (1.3 + i * 0.37) + i * 1.7) * 0.5 + 0.5).toFloat()
+        val b = (Math.sin(t * (0.7 + i * 0.21) - i) * 0.5 + 0.5).toFloat()
+        val bass = 1f - i.toFloat() / n * 0.45f
+        return (0.18f + 0.82f * (0.6f * a + 0.4f * b)) * beat * bass
+    }
+
+    override fun onDraw(c: Canvas) {
+        t += 0.045f
+        val n = COUNTS[(style / 10) % 5]
+        val rl = real
+        for (i in 0 until n) {
+            val tg = if (!active) 0.03f else if (useReal && rl != null) rl[i * rl.size / n] else sim(i, n)
+            lv[i] += (tg - lv[i]) * (if (tg > lv[i]) 0.55f else 0.16f)
+            pk[i] = maxOf(pk[i] - 0.01f, lv[i])
+        }
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val slot = w / n
+        val bw = slot * (if ((style / 10) % 5 == 4) 0.82f else 0.58f)
+        pt.shader = null
+        pt.style = Paint.Style.FILL
+        pt.strokeCap = Paint.Cap.ROUND
+        when (style % 10) {
+            0 -> for (i in 0 until n) {
+                val bh = maxOf(bw, lv[i] * h)
+                pt.color = colAt(i, n, lv[i])
+                val x = i * slot + (slot - bw) / 2
+                rc.set(x, h - bh, x + bw, h); c.drawRoundRect(rc, bw / 2, bw / 2, pt)
+            }
+            1 -> {
+                pt.style = Paint.Style.STROKE; pt.strokeWidth = maxOf(2f, bw * 0.3f)
+                for (i in 0 until n) {
+                    pt.color = colAt(i, n, lv[i])
+                    val x = i * slot + slot / 2
+                    c.drawLine(x, h - pt.strokeWidth / 2, x, h - maxOf(pt.strokeWidth, lv[i] * h), pt)
+                }
+            }
+            2 -> {
+                val step = bw * 1.3f
+                for (i in 0 until n) {
+                    pt.color = colAt(i, n, lv[i])
+                    val cnt = maxOf(1, (lv[i] * h / step).toInt())
+                    val x = i * slot + slot / 2
+                    for (j in 0 until cnt) c.drawCircle(x, h - j * step - bw / 2, bw * 0.45f, pt)
+                }
+            }
+            3 -> {
+                val step = bw * 0.9f
+                for (i in 0 until n) {
+                    pt.color = colAt(i, n, lv[i])
+                    val cnt = maxOf(1, (lv[i] * h / step).toInt())
+                    val x = i * slot + (slot - bw) / 2
+                    for (j in 0 until cnt) { rc.set(x, h - (j + 1) * step + step * 0.18f, x + bw, h - j * step); c.drawRoundRect(rc, 3f, 3f, pt) }
+                }
+            }
+            4 -> for (i in 0 until n) {
+                val bh = maxOf(bw, lv[i] * h)
+                pt.color = colAt(i, n, lv[i])
+                val x = i * slot + (slot - bw) / 2
+                rc.set(x, h / 2 - bh / 2, x + bw, h / 2 + bh / 2); c.drawRoundRect(rc, bw / 2, bw / 2, pt)
+            }
+            5, 6 -> {
+                path.reset()
+                var px = 0f
+                var py = 0f
+                for (i in 0 until n) {
+                    val x = i * slot + slot / 2
+                    val y = h - lv[i] * h * 0.9f - h * 0.05f
+                    if (i == 0) path.moveTo(x, y) else path.quadTo(px, py, (px + x) / 2, (py + y) / 2)
+                    px = x; py = y
+                }
+                path.lineTo(px, py)
+                if (style % 10 == 5) {
+                    pt.style = Paint.Style.STROKE; pt.strokeWidth = maxOf(3f, h * 0.07f)
+                    pt.shader = LinearGradient(0f, 0f, w, 0f, c1, c2, Shader.TileMode.CLAMP)
+                    c.drawPath(path, pt)
+                } else {
+                    path.lineTo(w, h); path.lineTo(0f, h); path.close()
+                    pt.shader = LinearGradient(0f, 0f, 0f, h, c1, Color.argb(30, Color.red(c2), Color.green(c2), Color.blue(c2)), Shader.TileMode.CLAMP)
+                    c.drawPath(path, pt)
+                }
+                pt.shader = null
+            }
+            7 -> {
+                val cx = w / 2
+                val cy = h / 2
+                val m = minOf(w, h)
+                val r0 = m * 0.24f
+                pt.style = Paint.Style.STROKE; pt.strokeWidth = maxOf(2f, m * 0.05f)
+                for (i in 0 until n) {
+                    pt.color = colAt(i, n, lv[i])
+                    val a = i * 2 * Math.PI / n - Math.PI / 2
+                    val ca = Math.cos(a).toFloat()
+                    val sa = Math.sin(a).toFloat()
+                    val len = lv[i] * m * 0.24f + 2f
+                    c.drawLine(cx + ca * r0, cy + sa * r0, cx + ca * (r0 + len), cy + sa * (r0 + len), pt)
+                }
+            }
+            8 -> for (i in 0 until n) {
+                val bh = maxOf(bw, lv[i] * h)
+                pt.color = colAt(i, n, lv[i])
+                val x = i * slot + (slot - bw) / 2
+                rc.set(x, h - bh, x + bw, h); c.drawRoundRect(rc, bw * 0.25f, bw * 0.25f, pt)
+                pt.color = c2
+                rc.set(x, h - pk[i] * h - bw * 0.45f, x + bw, h - pk[i] * h); c.drawRoundRect(rc, bw * 0.2f, bw * 0.2f, pt)
+            }
+            else -> {
+                val step = bw * 1.15f
+                for (i in 0 until n) {
+                    pt.color = colAt(i, n, lv[i])
+                    val cnt = maxOf(1, (lv[i] * h / step).toInt())
+                    val x = i * slot + slot / 2
+                    for (j in 0 until cnt) {
+                        val cy = h - j * step - step / 2
+                        val hs = bw * 0.55f
+                        path.reset(); path.moveTo(x, cy - hs); path.lineTo(x + hs, cy); path.lineTo(x, cy + hs); path.lineTo(x - hs, cy); path.close()
+                        c.drawPath(path, pt)
+                    }
+                }
+            }
+        }
+        postInvalidateOnAnimation()
     }
 }
 
@@ -330,6 +704,22 @@ AMOLED|000000|1DB954|00E676|dm
     private val plays = HashMap<Long, Int>()
     private val hist = ArrayList<Long>()
     private var rootV: View? = null
+    private var btnShape = 0
+    private var playFill = 0
+    private var barStyle = 0
+    private var showBars = true
+    private var barH = 44
+    private var realViz = false
+    private var cornerK = 1f
+    private var coverK = 1f
+    private var coverShape = 1
+    private var listPad = 6
+    private var autoIcons = false
+    private val ticons = HashMap<Long, Int>()
+    private val barsList = ArrayList<Bars>()
+    private var viz: android.media.audiofx.Visualizer? = null
+    private val fftLv = FloatArray(32)
+    private val fxNames = listOf("Пружина", "Покачивание", "Пульс", "Подпрыгивание", "Вспышка", "Вращение", "Только сжатие")
     private var c2 = 0
     private var curTab = 0
     private lateinit var settingsPage: ScrollView
@@ -395,7 +785,7 @@ AMOLED|000000|1DB954|00E676|dm
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun fmt(ms: Long): String { val s = ms / 1000; return String.format("%d:%02d", s / 60, s % 60) }
-    private fun rr(color: Int, r: Int) = GradientDrawable().apply { cornerRadius = dp(r).toFloat(); setColor(color) }
+    private fun rr(color: Int, r: Int) = GradientDrawable().apply { cornerRadius = dp(r).toFloat() * cornerK; setColor(color) }
     private fun mix(c: Int, f: Float) = Color.rgb(
         (Color.red(c) * f + Color.red(base) * (1 - f)).toInt(),
         (Color.green(c) * f + Color.green(base) * (1 - f)).toInt(),
@@ -417,12 +807,16 @@ AMOLED|000000|1DB954|00E676|dm
             val t = shown[i]
             val on = player?.currentMediaItem?.mediaId == t.id.toString()
             val ctx = this@MainActivity
-            val outer = FrameLayout(ctx).apply { setPadding(dp(20), dp(6), dp(18), dp(6)) }
+            val outer = FrameLayout(ctx).apply { setPadding(dp(20), dp(listPad), dp(18), dp(listPad)) }
             outer.alpha = if (i == dragIdx) 0.5f else 1f
             val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-            val badge = FrameLayout(ctx).apply { background = rr(card, 6) }
-            badge.addView(Ic(ctx, if (on && player?.isPlaying == true) P.PLAY else P.NOTE, if (on) c1 else grey, 0.5f), FrameLayout.LayoutParams(-1, -1))
-            row.addView(badge, LinearLayout.LayoutParams(dp(50), dp(50)))
+            val gi = ticons[t.id] ?: if (autoIcons) Math.abs(t.id.hashCode()) % Gi.COUNT else -1
+            if (gi >= 0) row.addView(Gi(ctx, gi, if (on) c1 else 0), LinearLayout.LayoutParams(dp(50), dp(50)))
+            else {
+                val badge = FrameLayout(ctx).apply { background = rr(card, 6) }
+                badge.addView(Ic(ctx, if (on && player?.isPlaying == true) P.PLAY else P.NOTE, if (on) c1 else grey, 0.5f), FrameLayout.LayoutParams(-1, -1))
+                row.addView(badge, LinearLayout.LayoutParams(dp(50), dp(50)))
+            }
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             col.addView(TextView(ctx).apply {
                 text = t.title; textSize = 16f; setSingleLine(); ellipsize = TextUtils.TruncateAt.END
@@ -450,6 +844,14 @@ AMOLED|000000|1DB954|00E676|dm
         }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        val fs = newBase.getSharedPreferences("p", MODE_PRIVATE).getInt("fscale", 0)
+        if (fs == 0) { super.attachBaseContext(newBase); return }
+        val cfg = android.content.res.Configuration(newBase.resources.configuration)
+        cfg.fontScale = fs / 100f
+        super.attachBaseContext(newBase.createConfigurationContext(cfg))
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         prefs = getSharedPreferences("p", MODE_PRIVATE)
@@ -458,6 +860,19 @@ AMOLED|000000|1DB954|00E676|dm
         customBg = prefs.getInt("cbg", customBg)
         fadeSec = prefs.getInt("fade", 0)
         skipSil = prefs.getBoolean("skip", false)
+        Fx.style = prefs.getInt("fx", 0)
+        btnShape = prefs.getInt("bshape", 0)
+        playFill = prefs.getInt("pfill", 0)
+        barStyle = prefs.getInt("bstyle", 0).coerceIn(0, Bars.COUNT - 1)
+        showBars = prefs.getBoolean("showbars", true)
+        barH = prefs.getInt("barh", 44)
+        realViz = prefs.getBoolean("realviz", false)
+        cornerK = prefs.getInt("cornerk", 100) / 100f
+        coverK = prefs.getInt("coverk", 100) / 100f
+        coverShape = prefs.getInt("cshape", 1)
+        listPad = prefs.getInt("pad", 6)
+        autoIcons = prefs.getBoolean("autoicons", false)
+        try { val o = JSONObject(prefs.getString("ticons", "{}") ?: "{}"); for (k in o.keys()) ticons[k.toLong()] = o.getInt(k) } catch (e: Exception) { }
         try { val o = JSONObject(prefs.getString("daily", "{}") ?: "{}"); for (k in o.keys()) daily[k] = o.getLong(k) } catch (e: Exception) { }
         try {
             val o = JSONObject(prefs.getString("dplays", "{}") ?: "{}")
@@ -487,6 +902,11 @@ AMOLED|000000|1DB954|00E676|dm
 
     override fun onRequestPermissionsResult(code: Int, p: Array<out String>, r: IntArray) {
         super.onRequestPermissionsResult(code, p, r)
+        if (code == 55) {
+            if (r.isNotEmpty() && r[0] == PackageManager.PERMISSION_GRANTED) toast("Полоски будут реагировать на звук")
+            else { realViz = false; prefs.edit().putBoolean("realviz", false).apply(); applyBars(); renderSettings(); toast("Нет доступа, полоски работают в режиме анимации") }
+            return
+        }
         loadTracks()
     }
 
@@ -510,6 +930,7 @@ AMOLED|000000|1DB954|00E676|dm
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
         for (w in webs.values) w.destroy()
+        viz?.release()
         dlReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) { } }
         (player as? MediaController)?.release()
         super.onDestroy()
@@ -528,6 +949,7 @@ AMOLED|000000|1DB954|00E676|dm
             daily[k] = (daily[k] ?: 0L) + 500L
             if (++saveCnt % 20 == 0) saveDaily()
         }
+        if (realViz && viz == null && player?.isPlaying == true) startViz()
         npRefresh?.invoke()
         ui.postDelayed({ tick() }, 500)
     }
@@ -538,11 +960,12 @@ AMOLED|000000|1DB954|00E676|dm
         nowTitle.text = m?.mediaMetadata?.title ?: "Выберите трек"
         nowArtist.text = m?.mediaMetadata?.artist ?: ""
         playIc.setIcon(if (p.isPlaying) P.PAUSE else P.PLAY)
+        for (b in barsList) b.active = p.isPlaying
         shufIc.tint(if (p.shuffleModeEnabled) c1 else grey)
-        shufIc.background = if (p.shuffleModeEnabled) oval(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
+        shufIc.background = if (p.shuffleModeEnabled) btnBg(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
         repIc.setIcon(if (p.repeatMode == Player.REPEAT_MODE_ONE) P.REPEAT_ONE else P.REPEAT)
         repIc.tint(if (p.repeatMode != Player.REPEAT_MODE_OFF) c1 else grey)
-        repIc.background = if (p.repeatMode != Player.REPEAT_MODE_OFF) oval(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
+        repIc.background = if (p.repeatMode != Player.REPEAT_MODE_OFF) btnBg(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
         heartIc.tint(if (favs.contains(m?.mediaId?.toLongOrNull() ?: -1L)) c1 else grey)
         val sp = p.playbackParameters.speed
         speedTv.text = (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString()) + "×"
@@ -660,7 +1083,7 @@ AMOLED|000000|1DB954|00E676|dm
     private fun refreshTop() {
         topBar.removeAllViews()
         fun btn(d: String, f: () -> Unit) = topBar.addView(
-            Ic(this, d, white, 0.5f).apply { background = oval(card); setOnClickListener { f() } }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { leftMargin = dp(6) })
+            Ic(this, d, white, 0.5f).apply { background = btnBg(card); setOnClickListener { f() } }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { leftMargin = dp(6) })
         if (ytMode) {
             btn(P.BACK) { if (web?.canGoBack() == true) web?.goBack() else setYt(false) }
             if (webKind == "yt") {
@@ -835,6 +1258,7 @@ AMOLED|000000|1DB954|00E676|dm
         rows.add(row(P.CHECK, "Выбрать несколько") { selecting = true; sel.clear(); sel.add(t.id); refreshTop(); trackAdapter.notifyDataSetChanged() })
         rows.add(row(P.ADD, "Добавить в плейлист") { addToPlaylist(listOf(t.id)) })
         rows.add(row(P.SHARE, "Поделиться") { share(listOf(t.id)) })
+        rows.add(row(P.IMAGE, "Иконка песни") { songIconPicker(listOf(t.id)) })
         rows.add(row(P.INFO, "Информация") { info(t) })
         rows.add(row(P.DELETE, "Удалить с устройства") { confirmDelete(listOf(t.id)) })
         sheet(t.title, rows)
@@ -1273,7 +1697,9 @@ AMOLED|000000|1DB954|00E676|dm
         col.addView(cover, LinearLayout.LayoutParams(side, side).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(20) })
         val title = TextView(this).apply { textSize = 24f; typeface = Typeface.DEFAULT_BOLD; setTextColor(white); setSingleLine(); ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
         val artist = TextView(this).apply { textSize = 15f; setTextColor(grey); setSingleLine(); ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
-        col.addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(28) })
+        val nb: Bars? = if (showBars) mkBars() else null
+        if (nb != null) col.addView(nb, LinearLayout.LayoutParams(-1, dp(barH)).apply { topMargin = dp(18) })
+        col.addView(title, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
         col.addView(artist, LinearLayout.LayoutParams(-1, -2))
         val cur = TextView(this).apply { text = "0:00"; textSize = 12f; setTextColor(grey) }
         val dur = TextView(this).apply { text = "0:00"; textSize = 12f; setTextColor(grey) }
@@ -1294,8 +1720,8 @@ AMOLED|000000|1DB954|00E676|dm
         col.addView(sr, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18) })
         val shuf = Ic(this, P.SHUFFLE, grey, 0.55f).apply { setOnClickListener { player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } } }
         val prev = Ic(this, P.PREV, white, 0.6f).apply { setOnClickListener { player?.seekToPrevious() } }
-        val play = Ic(this, P.PLAY, base, 0.55f).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(white) }
+        val play = Ic(this, P.PLAY, if (playFill == 1) base else onAcc, 0.55f).apply {
+            background = playBg()
             setOnClickListener { player?.let { if (it.isPlaying) it.pause() else it.play() } }
         }
         val next = Ic(this, P.NEXT, white, 0.6f).apply { setOnClickListener { player?.seekToNext() } }
@@ -1312,7 +1738,7 @@ AMOLED|000000|1DB954|00E676|dm
         }
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
         for ((v, sz) in listOf(Pair<View, Int>(shuf, 48), Pair<View, Int>(prev, 56), Pair<View, Int>(play, 70), Pair<View, Int>(next, 56), Pair<View, Int>(rep, 48)))
-            { if (sz in 50..60) v.background = oval(card); row.addView(v, LinearLayout.LayoutParams(dp(sz), dp(sz)).apply { leftMargin = dp(8); rightMargin = dp(8) }) }
+            { if (sz in 50..60) v.background = btnBg(card); row.addView(v, LinearLayout.LayoutParams(dp(sz), dp(sz)).apply { leftMargin = dp(8); rightMargin = dp(8) }) }
         col.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
 
         var shown0: android.graphics.Bitmap? = null
@@ -1324,12 +1750,13 @@ AMOLED|000000|1DB954|00E676|dm
                 artist.text = m?.mediaMetadata?.artist ?: ""
                 play.setIcon(if (p.isPlaying) P.PAUSE else P.PLAY)
                 shuf.tint(if (p.shuffleModeEnabled) c1 else grey)
-                shuf.background = if (p.shuffleModeEnabled) oval(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
+                shuf.background = if (p.shuffleModeEnabled) btnBg(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
                 rep.setIcon(if (p.repeatMode == Player.REPEAT_MODE_ONE) P.REPEAT_ONE else P.REPEAT)
                 rep.tint(if (p.repeatMode != Player.REPEAT_MODE_OFF) c1 else grey)
-                rep.background = if (p.repeatMode != Player.REPEAT_MODE_OFF) oval(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
+                rep.background = if (p.repeatMode != Player.REPEAT_MODE_OFF) btnBg(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1))) else null
                 heart.tint(if (favs.contains(m?.mediaId?.toLongOrNull() ?: -1L)) c1 else grey)
                 aura.active = p.isPlaying
+                nb?.active = p.isPlaying
                 if (!npDrag && p.duration > 0) {
                     sk.max = (p.duration / 1000).toInt()
                     sk.progress = (p.currentPosition / 1000).toInt()
@@ -1361,7 +1788,7 @@ AMOLED|000000|1DB954|00E676|dm
         frame.addView(col, FrameLayout.LayoutParams(-1, -1))
         frame.setOnTouchListener { _, ev -> gd.onTouchEvent(ev); true }
         d.setContentView(frame)
-        d.setOnDismissListener { npRefresh = null }
+        d.setOnDismissListener { npRefresh = null; nb?.let { barsList.remove(it) } }
         d.show()
         npRefresh?.invoke()
     }
@@ -1654,8 +2081,8 @@ AMOLED|000000|1DB954|00E676|dm
     private fun pressable(v: View): View {
         v.setOnTouchListener { x, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> x.animate().scaleX(0.95f).scaleY(0.95f).setDuration(90).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> x.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                MotionEvent.ACTION_DOWN -> Fx.down(x, 0.95f)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> Fx.up(x)
             }
             false
         }
@@ -1802,6 +2229,40 @@ AMOLED|000000|1DB954|00E676|dm
         srow(ap, P.PALETTE, "Свои цвета", "Подбери акцент и фон сам", c1) { colorEditor() }
         srow(ap, P.PALETTE, "Каталог тем", "Категории: неон, пастель, природа и другие", c2) { themeGallery() }
 
+        val kb = sCard("Кнопки")
+        srow(kb, P.BOLT, "Анимация нажатий", fxNames[Fx.style.coerceIn(0, 6)], c1) {
+            optionSheet("Анимация нажатий", fxNames, Fx.style) { Fx.style = it; prefs.edit().putInt("fx", it).apply(); renderSettings(); toast("Нажми на любую кнопку") }
+        }
+        val shapes = listOf("Круг", "Скруглённые", "Квадрат")
+        srow(kb, P.PLAY, "Форма кнопок", shapes[btnShape.coerceIn(0, 2)], c2) {
+            optionSheet("Форма кнопок", shapes, btnShape) { btnShape = it; prefs.edit().putInt("bshape", it).apply(); rebuild() }
+        }
+        val fills = listOf("Градиент", "Белая", "Цвет акцента")
+        srow(kb, P.PLAY, "Кнопка «Играть»", fills[playFill.coerceIn(0, 2)], c1) {
+            optionSheet("Кнопка «Играть»", fills, playFill) { playFill = it; prefs.edit().putInt("pfill", it).apply(); rebuild() }
+        }
+
+        val sbr = sCard("Полоски звука")
+        srowSwitch(sbr, P.EQ, "Показывать полоски", "Над перемоткой и на экране «Сейчас играет»", c1, showBars) { showBars = !showBars; prefs.edit().putBoolean("showbars", showBars).apply(); rebuild() }
+        srow(sbr, P.EQ, "Стиль полосок", Bars.name(barStyle), c2) { barsGallery() }
+        srow(sbr, P.SORT, "Высота полосок", barH.toString() + " dp", c1) { sliderSheet("Высота полосок", 24, 96, barH, " dp") { barH = it; prefs.edit().putInt("barh", it).apply(); rebuild() } }
+        srowSwitch(sbr, P.EQ, "Реагировать на звук", "Нужен доступ к микрофону, звук не записывается", c2, realViz) { toggleReal() }
+
+        val lk = sCard("Оформление")
+        srow(lk, P.PALETTE, "Скругления", (cornerK * 100).toInt().toString() + "%", c1) { sliderSheet("Скругления", 0, 160, (cornerK * 100).toInt(), "%") { cornerK = it / 100f; prefs.edit().putInt("cornerk", it).apply(); rebuild() } }
+        srow(lk, P.ALBUM, "Размер обложки", (coverK * 100).toInt().toString() + "%", c2) { sliderSheet("Размер обложки", 50, 100, (coverK * 100).toInt(), "%") { coverK = it / 100f; prefs.edit().putInt("coverk", it).apply(); rebuild() } }
+        val cshapes = listOf("Квадрат", "Скруглённая", "Сильно скруглённая", "Круг")
+        srow(lk, P.ALBUM, "Форма обложки", cshapes[coverShape.coerceIn(0, 3)], c1) { optionSheet("Форма обложки", cshapes, coverShape) { coverShape = it; prefs.edit().putInt("cshape", it).apply(); rebuild() } }
+        val pads = listOf("Компактно", "Обычно", "Просторно")
+        val padVals = intArrayOf(3, 6, 10)
+        srow(lk, P.SORT, "Плотность списка", pads[padVals.indexOf(listPad).coerceAtLeast(0)], c2) { optionSheet("Плотность списка", pads, padVals.indexOf(listPad).coerceAtLeast(0)) { listPad = padVals[it]; prefs.edit().putInt("pad", listPad).apply(); rebuild() } }
+        val fsn = listOf("Как в системе", "Мелкий", "Обычный", "Крупный", "Огромный")
+        val fsv = intArrayOf(0, 85, 100, 115, 130)
+        val fcur = fsv.indexOf(prefs.getInt("fscale", 0)).coerceAtLeast(0)
+        srow(lk, P.SORT, "Размер шрифта", fsn[fcur], c1) { optionSheet("Размер шрифта", fsn, fcur) { prefs.edit().putInt("fscale", fsv[it]).apply(); recreate() } }
+        srowSwitch(lk, P.NOTE, "Автоиконки песен", "Каждая песня получает свою цветную иконку", c2, autoIcons) { autoIcons = !autoIcons; prefs.edit().putBoolean("autoicons", autoIcons).apply(); trackAdapter.notifyDataSetChanged() }
+        srow(lk, P.DELETE, "Сбросить иконки песен", "Вернуть значки по умолчанию", c1) { ticons.clear(); saveIcons(); toast("Иконки сброшены") }
+
         val pb = sCard("Воспроизведение")
         srow(pb, P.BOLT, "Плавный переход", if (fadeSec == 0) "Выключен" else fadeSec.toString() + " сек", c1) { fadeSheet() }
         srowSwitch(pb, P.NEXT, "Пропуск тишины", "Убирает паузы в начале и конце треков", c2, skipSil) { toggleSkip() }
@@ -1902,6 +2363,142 @@ AMOLED|000000|1DB954|00E676|dm
         } catch (e: Exception) { toast("Не удалось добавить ярлык") }
     }
 
+    private fun btnBg(color: Int, big: Boolean = false): GradientDrawable {
+        val g = GradientDrawable()
+        g.setColor(color)
+        when (btnShape) {
+            0 -> g.shape = GradientDrawable.OVAL
+            1 -> g.cornerRadius = dp(if (big) 24 else 16).toFloat() * cornerK.coerceAtLeast(0.6f)
+            else -> g.cornerRadius = dp(if (big) 10 else 6).toFloat()
+        }
+        return g
+    }
+
+    private fun playBg(): GradientDrawable {
+        val g = when (playFill) {
+            0 -> GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(c1, c2))
+            2 -> GradientDrawable().apply { setColor(c1) }
+            else -> GradientDrawable().apply { setColor(white) }
+        }
+        when (btnShape) {
+            0 -> g.shape = GradientDrawable.OVAL
+            1 -> g.cornerRadius = dp(24).toFloat()
+            else -> g.cornerRadius = dp(10).toFloat()
+        }
+        return g
+    }
+
+    private fun mkBars(): Bars {
+        val b = Bars(this)
+        b.style = barStyle; b.c1 = c1; b.c2 = c2; b.useReal = realViz; b.real = fftLv
+        b.active = player?.isPlaying == true
+        barsList.add(b)
+        return b
+    }
+
+    private fun applyBars() { for (b in barsList) { b.style = barStyle; b.useReal = realViz; b.c1 = c1; b.c2 = c2 } }
+
+    private fun startViz() {
+        if (!realViz || viz != null) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
+        val sid = Audio.session
+        if (sid == 0) return
+        try {
+            val v = android.media.audiofx.Visualizer(sid)
+            v.captureSize = android.media.audiofx.Visualizer.getCaptureSizeRange()[1]
+            v.setDataCaptureListener(object : android.media.audiofx.Visualizer.OnDataCaptureListener {
+                override fun onWaveFormDataCapture(vis: android.media.audiofx.Visualizer?, wf: ByteArray?, rate: Int) {}
+                override fun onFftDataCapture(vis: android.media.audiofx.Visualizer?, fft: ByteArray?, rate: Int) {
+                    if (fft == null) return
+                    val bins = fft.size / 2
+                    for (i in 0 until 32) {
+                        val b = 1 + (Math.pow(i / 32.0, 1.6) * (bins - 2)).toInt()
+                        val re = fft[2 * b].toInt()
+                        val im = fft[2 * b + 1].toInt()
+                        val mag = Math.hypot(re.toDouble(), im.toDouble()).toFloat() / 128f * 2.4f
+                        fftLv[i] = (mag * (1f + i * 0.05f)).coerceIn(0f, 1f)
+                    }
+                }
+            }, android.media.audiofx.Visualizer.getMaxCaptureRate() / 2, false, true)
+            v.enabled = true
+            viz = v
+        } catch (e: Exception) { viz = null }
+    }
+
+    private fun toggleReal() {
+        realViz = !realViz
+        prefs.edit().putBoolean("realviz", realViz).apply()
+        if (realViz && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 55)
+        if (!realViz) { viz?.let { it.enabled = false; it.release() }; viz = null }
+        applyBars(); renderSettings()
+    }
+
+    private fun optionSheet(title: String, names: List<String>, cur: Int, f: (Int) -> Unit) {
+        sheet(title, names.mapIndexed { i, n -> row(if (i == cur) P.CHECK else P.NOTE, n) { f(i) } })
+    }
+
+    private fun sliderSheet(title: String, lo: Int, hi: Int, cur: Int, suffix: String, done: (Int) -> Unit) {
+        val d = android.app.Dialog(this)
+        val box = sheetBox(title)
+        var v = cur
+        val tv = TextView(this).apply { text = v.toString() + suffix; textSize = 30f; typeface = Typeface.DEFAULT_BOLD; setTextColor(c1); gravity = Gravity.CENTER }
+        box.addView(tv, LinearLayout.LayoutParams(-1, -2))
+        val sb = SeekBar(this)
+        sb.max = hi - lo
+        sb.progress = cur - lo
+        sb.progressTintList = ColorStateList.valueOf(c1)
+        sb.thumbTintList = ColorStateList.valueOf(c1)
+        sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, u: Boolean) { v = p + lo; tv.text = v.toString() + suffix }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+        box.addView(sb, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(8), dp(10), dp(8), dp(14)) })
+        box.addView(ichip(P.CHECK, "Применить", true) { d.dismiss(); done(v) }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        present(d, box)
+    }
+
+    private fun barsGallery() {
+        val d = android.app.Dialog(this)
+        val box = sheetBox("Полоски звука: " + Bars.COUNT)
+        var line: LinearLayout? = null
+        for (i in 0 until Bars.COUNT) {
+            if (i % 2 == 0) { line = LinearLayout(this); box.addView(line, LinearLayout.LayoutParams(-1, -2)) }
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(dp(8), dp(8), dp(8), dp(8))
+                if (i == barStyle) background = rr(Color.argb(45, Color.red(c1), Color.green(c1), Color.blue(c1)), 14)
+                setOnClickListener { d.dismiss(); barStyle = i; prefs.edit().putInt("bstyle", i).apply(); applyBars(); renderSettings() }
+            }
+            val b = Bars(this)
+            b.style = i; b.c1 = c1; b.c2 = c2; b.active = true
+            cell.addView(b, LinearLayout.LayoutParams(-1, dp(46)))
+            cell.addView(TextView(this).apply { text = Bars.name(i); textSize = 11f; setTextColor(grey); gravity = Gravity.CENTER; setSingleLine() }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            line!!.addView(pressable(cell), LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        present(d, box)
+    }
+
+    private fun saveIcons() {
+        val o = JSONObject()
+        for ((k, v) in ticons) o.put(k.toString(), v)
+        prefs.edit().putString("ticons", o.toString()).apply()
+        trackAdapter.notifyDataSetChanged()
+    }
+
+    private fun songIconPicker(ids: List<Long>) {
+        val d = android.app.Dialog(this)
+        val box = sheetBox("Иконка песни: " + Gi.COUNT + " на выбор")
+        box.addView(chip("Сбросить", false) { for (id in ids) ticons.remove(id); saveIcons(); d.dismiss() }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(8), 0, 0, dp(10)) })
+        var line: LinearLayout? = null
+        for (i in 0 until Gi.COUNT) {
+            if (i % 5 == 0) { line = LinearLayout(this); box.addView(line, LinearLayout.LayoutParams(-1, -2)) }
+            val g = Gi(this, i)
+            g.setOnClickListener { for (id in ids) ticons[id] = i; saveIcons(); d.dismiss() }
+            line!!.addView(pressable(g), LinearLayout.LayoutParams(0, dp(56), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        }
+        present(d, box)
+    }
+
     private fun rebuild() { coverId = -2L; build(); refreshTabs(); refreshList(); updateNow() }
 
     private fun chip(t: String, on: Boolean, f: () -> Unit) = TextView(this).apply {
@@ -1914,6 +2511,7 @@ AMOLED|000000|1DB954|00E676|dm
     }
 
     private fun build() {
+        barsList.clear()
         val th = themes[ti]
         val cu = ti == themes.size - 1
         c1 = if (cu) customAcc else Color.parseColor(th.acc)
@@ -1945,9 +2543,9 @@ AMOLED|000000|1DB954|00E676|dm
         hs.addView(tabsBox)
         header.addView(hs, LinearLayout.LayoutParams(-1, -2))
 
-        val side = resources.displayMetrics.widthPixels - dp(48)
+        val side = ((resources.displayMetrics.widthPixels - dp(48)) * coverK).toInt()
         val box = FrameLayout(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(mix(c1, 0.6f), mix(c2, 0.6f))).apply { cornerRadius = dp(12).toFloat() }
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(mix(c1, 0.6f), mix(c2, 0.6f))).apply { cornerRadius = if (coverShape == 3) side / 2f else dp(intArrayOf(0, 12, 28)[coverShape.coerceIn(0, 2)]).toFloat() }
             clipToOutline = true
             elevation = dp(18).toFloat()
         }
@@ -1956,7 +2554,7 @@ AMOLED|000000|1DB954|00E676|dm
         box.addView(coverImg, FrameLayout.LayoutParams(-1, -1))
         box.addView(coverNote, FrameLayout.LayoutParams(-1, -1))
         box.setOnClickListener { nowPlaying() }
-        header.addView(box, LinearLayout.LayoutParams(side, side).apply { topMargin = dp(18) })
+        header.addView(box, LinearLayout.LayoutParams(side, side).apply { topMargin = dp(18); gravity = Gravity.CENTER_HORIZONTAL })
 
         nowTitle = TextView(this).apply { text = "Выберите трек"; textSize = 24f; typeface = Typeface.DEFAULT_BOLD; setTextColor(white); setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
         nowArtist = TextView(this).apply { textSize = 15f; setTextColor(grey); setSingleLine(); ellipsize = TextUtils.TruncateAt.END }
@@ -2027,13 +2625,14 @@ AMOLED|000000|1DB954|00E676|dm
         seekRow.addView(curTv)
         seekRow.addView(seek, LinearLayout.LayoutParams(0, -2, 1f))
         seekRow.addView(durTv)
+        if (showBars) panel.addView(mkBars(), LinearLayout.LayoutParams(-1, dp(barH)).apply { bottomMargin = dp(6) })
         panel.addView(seekRow)
 
         shufIc = Ic(this, P.SHUFFLE, grey, 0.55f).apply { setOnClickListener { player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } } }
         val prev = Ic(this, P.PREV, white, 0.6f).apply { setOnClickListener { player?.seekToPrevious() } }
-        playIc = Ic(this, P.PLAY, base, 0.55f).apply {
+        playIc = Ic(this, P.PLAY, if (playFill == 1) base else onAcc, 0.55f).apply {
             glow(this, c1, 12)
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(white) }
+            background = playBg()
             setOnClickListener { player?.let { if (it.isPlaying) it.pause() else it.play() } }
         }
         val next = Ic(this, P.NEXT, white, 0.6f).apply { setOnClickListener { player?.seekToNext() } }
@@ -2049,7 +2648,7 @@ AMOLED|000000|1DB954|00E676|dm
             }
         }
         val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        fun cell(v: View, s: Int) { if (s in 50..60) v.background = oval(card); row.addView(v, LinearLayout.LayoutParams(dp(s), dp(s)).apply { leftMargin = dp(8); rightMargin = dp(8) }) }
+        fun cell(v: View, s: Int) { if (s in 50..60) v.background = btnBg(card); row.addView(v, LinearLayout.LayoutParams(dp(s), dp(s)).apply { leftMargin = dp(8); rightMargin = dp(8) }) }
         cell(shufIc, 48); cell(prev, 56); cell(playIc, 66); cell(next, 56); cell(repIc, 48)
         panel.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         val row2 = LinearLayout(this).apply { gravity = Gravity.CENTER }
